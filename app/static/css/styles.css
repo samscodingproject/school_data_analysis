@@ -144,3 +144,133 @@ body {
     overflow: hidden;
     transition: max-height 0.2s ease-out;
 }
+
+table {
+    width: 98%;
+    border-collapse: collapse;
+    padding-top: 5px;
+    margin-top: 10px;
+}
+
+th, td {
+    border: 1px solid #ffffff;
+    text-align: left;
+    padding: 8px;
+}
+
+th {
+    background-color: #f2f2f200;
+}
+
+select {
+    width: 100%;
+    padding: 10px;
+    margin: 10px 0;
+  }
+  
+  input[type="text"] {
+    width: 100%;
+    padding: 10px;
+    margin: 10px 0;
+    box-sizing: border-box; /* Make sure padding does not affect overall width */
+  }
+
+/* Base container styles to ensure padding */
+#container {
+    padding: 1em;
+    background-color: #00000000; /* adjust the color to match your palette */
+  }
+  
+  /* Style the select element */
+  select[multiple] {
+    margin-top: 1em; /* space below the collapsible header */
+    border: 1px solid #cccccc; /* border color */
+    background-color: #00000000; /* background color */
+    padding: 0.5em; /* padding inside the select box */
+    border-radius: 4px; /* rounded corners */
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1); /* subtle shadow for depth */
+  }
+  
+  /* Style each option */
+  select[multiple] option {
+    padding: 0.5em; /* padding for each option */
+    background-color: #00000000; /* background color */
+  }
+  
+  /* Container for selected classes' average marks */
+  #selectedClassesContainer {
+    margin-top: 1em; /* space above the container */
+    padding: 1em;
+    background-color: #00000000; /* adjust the color to match your palette */
+    border: 1px solid #cccccc; /* border color */
+    border-radius: 4px; /* rounded corners */
+  }
+  
+  /* Style each paragraph inside the selectedClassesContainer */
+  #selectedClassesContainer p {
+    background-color: #00000000; /* slightly darker than container bg */
+    padding: 0.5em;
+    margin-bottom: 0.5em; /* space between paragraphs */
+    border-radius: 4px; /* rounded corners */
+  }
+
+
+  .selected-classes {
+    display: none; /* Hide by default */
+    margin-top: 1em; /* Space from the previous element */
+    padding: 1em;
+    background-color: #00000000; /* This should match your color palette */
+    border: 1px solid #cccccc;
+    border-radius: 4px;
+  }
+  
+  /* Style for when the container has content and should be shown */
+  .selected-classes.active {
+    display: block; /* Show when active */
+  }
+
+  /* Assuming the container ID where Select2 is initialized is `#averageMarksContainer` */
+
+#selectedClassesContainer .select2-container--default .select2-selection--multiple {
+    background-color: #333; /* Dark grey background */
+    color: #fff; /* White text */
+  }
+  
+  #selectedClassesContainer .select2-container--default .select2-selection--multiple .select2-selection__choice,
+  #selectedClassesContainer .select2-container--default .select2-selection--multiple .select2-selection__choice__remove {
+    background-color: #55555500; /* Slightly lighter grey for choices */
+    color: #ffffff; /* White text */
+    border: 1px solid #444; /* Border color for the choices */
+  }
+  
+  #selectedClassesContainer .select2-container--default .select2-selection--multiple .select2-selection__clear {
+    color: #fff; /* White text */
+  }
+  
+  #selectedClassesContainer .select2-container--default .select2-selection--multiple .select2-selection__placeholder {
+    color: #fff; /* White text for the placeholder */
+  }
+  
+  #selectedClassesContainer .select2-container--default .select2-selection--multiple .select2-search--inline .select2-search__field {
+    color: #fff; /* White text for the search/input field */
+  }
+  
+  #selectedClassesContainer .select2-dropdown {
+    background-color: #33333300; /* Dark grey background for dropdown */
+    color: #fff; /* White text for dropdown */
+  }
+  
+  #selectedClassesContainer .select2-results__option {
+    color: #fff; /* White text for results/options */
+  }
+  
+  #selectedClassesContainer .select2-results__option--highlighted {
+    background-color: #444; /* Darker grey background for highlighted option */
+    color: #fff; /* White text for highlighted option */
+  }
+  
+  /* Additional styles to ensure white text color for the select arrow */
+  #selectedClassesContainer .select2-container--default .select2-selection--multiple .select2-selection__arrow b {
+    border-color: #fff transparent transparent transparent;
+  }
+  

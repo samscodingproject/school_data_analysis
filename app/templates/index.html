@@ -4,6 +4,12 @@
     <meta charset="UTF-8">
     <title>Upload Files for Analysis</title>
     <link rel="stylesheet" href="/static/css/styles.css"> <!-- Adjust the path as necessary -->
+    <!-- Include Select2 CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/select2/dist/css/select2.min.css" rel="stylesheet" />
+    <!-- Include jQuery -->
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+    <!-- Include Select2 JS -->
+    <script src="https://cdn.jsdelivr.net/npm/select2/dist/js/select2.min.js"></script>
 </head>
 <body>
     <div class="container">
@@ -29,12 +35,17 @@
 
         <!-- Placeholder for displaying messages (errors/success) -->
         <div id="messages" class="messages"></div>
-        
+
         <!-- Placeholder for dynamically generated analysis results -->
         <section id="analysisResults" class="analysis-results"></section>
+
+        <!-- Container for displaying selected classes' average marks -->
+        <div id="selectedClassesContainer" class="selected-classes"></div>
+
         <button id="downloadReportBtn" class="button button-primary" style="display: none;">Download Report</button>
     </div>
 
+    <!-- Include your custom JavaScript -->
     <script src="/static/js/app.js"></script>
 </body>
 </html>

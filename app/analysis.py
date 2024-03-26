@@ -57,6 +57,37 @@ def identify_students_with_subjects_below_threshold(marks_df):
 def calculate_average_marks_by_class(marks_df):
     return marks_df.groupby('Class')['CalculatedFinalMark'].mean()
 
+def generate_regression_explainer(slope, intercept, r_value, p_value, std_err):
+    regression_explainer = ""
+    
+    # Slope
+    regression_explainer += f"The slope ({slope:.2f}) indicates that for each additional percentage point in attendance, "
+    regression_explainer += f"the model predicts a {slope:.2f} point increase in the final mark.\n\n"
+
+    # Intercept
+    regression_explainer += f"The intercept ({intercept:.2f}) suggests that students with zero percent attendance are predicted to score {intercept:.2f} points, "
+    regression_explainer += "which may not be realistic and indicates the intercept's value in this context should be cautiously interpreted.\n\n"
+
+    # R-value and R-squared
+    r_squared = r_value ** 2
+    regression_explainer += f"An R-value of {r_value:.2f} results in an R-squared (coefficient of determination) of {r_squared:.2f}, "
+    regression_explainer += "indicating the proportion of the variance in the dependent variable (final mark) that is predictable from the independent variable (attendance percentage).\n\n"
+
+    # P-value
+    if p_value < 0.05:
+        regression_explainer += f"With a P-value of {p_value:.4f}, the relationship between attendance and final marks is statistically significant, "
+        regression_explainer += "meaning there's a low probability that this relationship is due to chance.\n\n"
+    else:
+        regression_explainer += f"With a P-value of {p_value:.4f}, the relationship between attendance and final marks is not statistically significant, "
+        regression_explainer += "suggesting that any observed correlation may be due to chance.\n\n"
+
+    # Standard Error
+    regression_explainer += f"The standard error of the slope ({std_err:.2f}) measures the average distance that the observed values fall from the regression line. "
+    regression_explainer += "A lower standard error indicates that the slope estimate is more precise.\n\n"
+
+    return regression_explainer
+
+
 def analyze_correlation_and_prepare_scatter_plot_data(attendance_df, marks_df):
     # Merge dataframes on 'StudentID'
     combined_df = pd.merge(marks_df, attendance_df[['StudentID', 'OverallAttendancePercentage']], on='StudentID', how='inner')
@@ -83,6 +114,23 @@ def analyze_correlation_and_prepare_scatter_plot_data(attendance_df, marks_df):
     plot_filename = 'scatter_plot.png'
     generate_scatter_plot(attendance_percentage.tolist(), final_mark.tolist(), slope, intercept, r_value, plot_filename)
 
+
+    correlation_explainer = f"The correlation coefficient of {correlation:.2f} suggests "
+    if abs(correlation) > 0.7:
+        correlation_explainer += "a strong"
+    elif abs(correlation) > 0.3:
+        correlation_explainer += "a moderate"
+    else:
+        correlation_explainer += "a weak"
+    correlation_explainer += " linear relationship between attendance percentage and final marks. "
+    correlation_explainer += "A positive value indicates that higher attendance is associated with higher marks, while a negative value suggests the opposite."
+
+    regression_explainer = generate_regression_explainer(slope, intercept, r_value, p_value, std_err)
+
+    explainer_text = {
+        'correlation': correlation_explainer,
+        'regression': regression_explainer
+    }
     # Ensure values are floats or N/A
     correlation_analysis = {
         'correlation': float(correlation) if not np.isnan(correlation) else 'N/A',
@@ -93,13 +141,14 @@ def analyze_correlation_and_prepare_scatter_plot_data(attendance_df, marks_df):
             'p_value': float(p_value) if not np.isnan(p_value) else 'N/A',
             'std_err': float(std_err) if not np.isnan(std_err) else 'N/A',
         },
+        'explainer_text': explainer_text,  # Add explainer_text here
         'plot_filename': plot_filename
     }
     
     return correlation_analysis
 
 def generate_scatter_plot(attendance_percentage, final_mark, slope, intercept, r_value, plot_filename):
-    plt.figure(figsize=(8, 6))
+    plt.figure(figsize=(9, 7))
     plt.scatter(attendance_percentage, final_mark, alpha=0.5, label='Student Data')
     
     # Calculate values for the line of best fit

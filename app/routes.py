@@ -12,10 +12,6 @@ logging.basicConfig(level=logging.INFO)
 import re
 import tempfile
 
-
-
-
-
 main = Blueprint('main', __name__)
 
 # Define a maximum file size in bytes (e.g., 5MB)
