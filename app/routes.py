@@ -1,5 +1,4 @@
 from docx import Document
-
 from app.analysis import perform_comprehensive_analysis
 from .utils import allowed_file, save_temp_files
 from flask import Blueprint, render_template, request, jsonify, flash, redirect, url_for, flash, send_file, current_app, session
