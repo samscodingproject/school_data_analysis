@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Upload Files for Analysis</title>
+    <link rel="stylesheet" href="/static/css/styles.css"> <!-- Adjust the path as necessary -->
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <img src="/static/images/st-mary-logo.png" alt="St. Mary Logo" class="small-image centered-image">
+            <h1>Upload Attendance and Marks Files</h1>
+            <div class="template-downloads">
+                <a href="/static/templates/Attendance Data Template.xlsx" download="Attendance Data Template.xlsx" class="button button-primary">Download Attendance Data Template</a>
+                <a href="/static/templates/Marks Data Template.xlsx" download="Marks Data Template.xlsx" class="button button-secondary">Download Marks Data Template</a>
+            </div>
+        </header>
+        <form id="uploadForm" method="post" enctype="multipart/form-data" class="upload-form">
+            <div class="form-field">
+                <label for="attendanceFile">Upload Attendance Data:</label>
+                <input type="file" id="attendanceFile" name="attendanceFile" accept=".xls,.xlsx" required>
+            </div>
+            <div class="form-field">
+                <label for="marksFile">Upload Marks Data:</label>
+                <input type="file" id="marksFile" name="marksFile" accept=".xls,.xlsx" required>
+            </div>
+            <button type="submit" class="button button-primary">Analyse</button>
+        </form>
+
+        <!-- Placeholder for displaying messages (errors/success) -->
+        <div id="messages" class="messages"></div>
+        
+        <!-- Placeholder for dynamically generated analysis results -->
+        <section id="analysisResults" class="analysis-results"></section>
+        <button id="downloadReportBtn" class="button button-primary" style="display: none;">Download Report</button>
+    </div>
+
+    <script src="/static/js/app.js"></script>
+</body>
+</html>
