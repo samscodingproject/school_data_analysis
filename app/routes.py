@@ -50,33 +50,54 @@ def index():
 def upload_files():
     """Handle file uploads and return analysis results."""
     print("upload function called")
-
     attendance_file = request.files.get('attendanceFile')
     marks_file = request.files.get('marksFile')
 
     if not attendance_file or not marks_file:
-        return jsonify({'error': 'Missing files. Please upload both attendance and marks files.'}), 400
+        error_message = 'Missing files. Please make sure to select and upload both attendance and marks files before submitting the form.'
+        print(error_message)
+        return jsonify({'error': error_message}), 400
 
-    if not (allowed_file(attendance_file.filename) and allowed_file(marks_file.filename)):
-        return jsonify({'error': 'File type not allowed. Please upload only XLS or XLSX files.'}), 400
-
-    if not (is_file_size_allowed(attendance_file) and is_file_size_allowed(marks_file)):
-        return jsonify({'error': 'One or more files exceed the maximum allowed size of 5MB.'}), 400
+    if not is_file_size_allowed(attendance_file) or not is_file_size_allowed(marks_file):
+        max_size_mb = MAX_FILE_SIZE / (1024 * 1024)
+        error_message = f'File size exceeds the limit. Please ensure each file is under {max_size_mb} MB.'
+        print(error_message)
+        return jsonify({'error': error_message}), 400
 
     try:
         # Temporarily save files for processing
         print("Saving files temporarily")
         temp_attendance_path, temp_marks_path = save_temp_files(attendance_file, marks_file)
-        
         # Store the temporary file paths in the session
         session['attendance_file'] = temp_attendance_path
         session['marks_file'] = temp_marks_path
-        
+
+        # Read the Excel files
+        attendance_df = pd.read_excel(temp_attendance_path)
+        marks_df = pd.read_excel(temp_marks_path)
+
+        # Check for required columns in the attendance file
+        required_attendance_columns = ['StudentID','Class', 'Percentage']
+        missing_attendance_columns = [col for col in required_attendance_columns if col not in attendance_df.columns]
+        if missing_attendance_columns:
+            error_message = f"The attendance file is missing the following required columns: {', '.join(missing_attendance_columns)}. " \
+                            f"Please ensure that the attendance file follows the provided template and includes all the necessary columns."
+            print(error_message)
+            return jsonify({'error': error_message}), 400
+
+        # Check for required columns in the marks file
+        required_marks_columns = ['StudentID', 'Subject','Class','T1','T2','T3','T1Weight','T2Weight','T3Weight', 'FinalMark']
+        missing_marks_columns = [col for col in required_marks_columns if col not in marks_df.columns]
+        if missing_marks_columns:
+            error_message = f"The marks file is missing the following required columns: {', '.join(missing_marks_columns)}. " \
+                            f"Please ensure that the marks file follows the provided template and includes all the necessary columns."
+            print(error_message)
+            return jsonify({'error': error_message}), 400
+
         # Perform analysis
         print("Calling perform_comprehensive_analysis")
         results = perform_comprehensive_analysis(temp_attendance_path, temp_marks_path)
 
-        # Assuming results is a DataFrame, for example
         # Generate a temporary file path
         _, temp_file_path = tempfile.mkstemp(suffix='.pkl')
 
@@ -86,7 +107,6 @@ def upload_files():
         session['attendance_file'] = temp_attendance_path
         session['marks_file'] = temp_marks_path
 
-        
         # Use pickle to save the results dictionary
         with open(temp_file_path, 'wb') as f:
             pickle.dump(results, f)
@@ -97,9 +117,40 @@ def upload_files():
         # Return analysis results as JSON
         return jsonify(results)
 
+    except KeyError as e:
+        missing_column = str(e).strip("'[]'")
+        if missing_column in ['StudentID', 'AttendancePercentage']:
+            file_name = 'attendance'
+        elif missing_column in ['StudentID', 'TotalMarks']:
+            file_name = 'marks'
+        else:
+            file_name = 'unknown'
+
+        error_message = f"The required column '{missing_column}' is missing from the {file_name} file. " \
+                        f"Please ensure that the {file_name} file follows the provided template and includes " \
+                        f"all the necessary columns."
+        print(error_message)
+        return jsonify({'error': error_message}), 400
+
+    except FileNotFoundError as e:
+        error_message = f"File not found: {str(e)}. Please check if the uploaded files exist and try again."
+        print(error_message)
+        return jsonify({'error': error_message}), 500
+
+    except PermissionError as e:
+        error_message = f"Permission denied: {str(e)}. Please ensure the server has write permissions for the temporary directory."
+        print(error_message)
+        return jsonify({'error': error_message}), 500
+
+    except ValueError as e:
+        error_message = f"Invalid data: {str(e)}. Please check the contents of the uploaded files and ensure they are in the expected format."
+        print(error_message)
+        return jsonify({'error': error_message}), 500
+
     except Exception as e:
-        print(f"An unexpected error occurred: {str(e)}")
-        return jsonify({'error': 'An unexpected error occurred during analysis'}), 500
+        error_message = f"An unexpected error occurred: {str(e)}. Please try again or contact support for assistance."
+        print(error_message)
+        return jsonify({'error': error_message}), 500
 
 
 def cleanup_files(temp_attendance_path, temp_marks_path):

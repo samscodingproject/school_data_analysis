@@ -48,10 +48,16 @@ def identify_low_z_scores(marks_df):
 def identify_students_with_subjects_below_threshold(marks_df):
     # Filter rows with low Z-scores
     low_z_scores = marks_df[marks_df['zScore'] < -1.2]
-
+    
     # Group by StudentID and aggregate the subjects into a list
     subjects_below_threshold = low_z_scores.groupby('StudentID')['Subject'].apply(list).reset_index(name='Subjects')
-
+    
+    # Count the number of subjects below the threshold for each student
+    subjects_below_threshold['SubjectCount'] = subjects_below_threshold['Subjects'].apply(len)
+    
+    # Sort the results by the number of subjects in descending order
+    subjects_below_threshold = subjects_below_threshold.sort_values(by='SubjectCount', ascending=False)
+    
     return subjects_below_threshold
 
 def calculate_average_marks_by_class(marks_df):

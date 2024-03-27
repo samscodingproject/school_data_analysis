@@ -31,19 +31,19 @@ def generate_student_report(marks_df, student_ids, attendance_df=None, overall_a
         academic_results_table = document.add_table(rows=1, cols=6)
         hdr_cells = academic_results_table.rows[0].cells
         hdr_cells[0].text = 'Subject'
-        hdr_cells[1].text = 'Term 1 Weighted Mark'
-        hdr_cells[2].text = 'Term 2 Weighted Mark'
-        hdr_cells[3].text = 'Term 3 Weighted Mark'
+        hdr_cells[1].text = 'Term 1 Mark'
+        hdr_cells[2].text = 'Term 2 Mark'
+        hdr_cells[3].text = 'Term 3 Mark'
         hdr_cells[4].text = 'Final Course Mark'
         hdr_cells[5].text = 'Final Course z-Score'
 
         for _, row in student_marks_data.iterrows():
             row_cells = academic_results_table.add_row().cells
             row_cells[0].text = row['Subject']
-            row_cells[1].text = str(row['T1Weight'])
-            row_cells[2].text = str(row['T2Weight'])
-            row_cells[3].text = str(row['T3Weight'])
-            row_cells[4].text = str(row['CalculatedFinalMark'])
+            row_cells[1].text = f"{row['T1']}%"
+            row_cells[2].text = f"{row['T2']}%"
+            row_cells[3].text = f"{row['T3']}%"
+            row_cells[4].text = f"{row['CalculatedFinalMark']}%"
             row_cells[5].text = str(row['zScore'])
 
         # Attendance 2024 Section
@@ -57,7 +57,7 @@ def generate_student_report(marks_df, student_ids, attendance_df=None, overall_a
             student_overall_attendance = overall_attendance[overall_attendance['StudentID'] == student_id]['AttendancePercentage'].values[0]
             overall_attendance_row = attendance_table.add_row().cells
             overall_attendance_row[0].text = 'Overall Attendance'
-            overall_attendance_row[1].text = str(student_overall_attendance)
+            overall_attendance_row[1].text = f"{str(student_overall_attendance)}%"
 
         if attendance_df is not None:
             student_attendance_data = attendance_df[attendance_df['StudentID'] == student_id]
@@ -66,7 +66,7 @@ def generate_student_report(marks_df, student_ids, attendance_df=None, overall_a
                 attendance_percentage = row['AttendancePercentage']
                 new_row = attendance_table.add_row().cells
                 new_row[0].text = subject
-                new_row[1].text = str(attendance_percentage)
+                new_row[1].text = f"{str(attendance_percentage)}%"
 
         # Deputy Principal Sign Off
         document.add_paragraph("Deputy Principal Sign Off: ______________________________")

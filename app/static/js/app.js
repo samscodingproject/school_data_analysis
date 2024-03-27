@@ -27,6 +27,8 @@ document.getElementById('uploadForm').addEventListener('submit', async function(
 
         // Show the download button after successful data processing
         document.getElementById('downloadReportBtn').style.display = 'inline-block';
+
+        
     } catch (error) {
         displayMessage(error.message, 'error');
     }
@@ -78,7 +80,6 @@ function displayCorrelationAndScatterPlotResults(correlationAnalysis, plotFilena
 function displayCorrelationResults({ correlation, line_of_best_fit, explainer_text }) {
     const correlationValue = isFinite(correlation) ? correlation.toFixed(2) : 'N/A';
     let resultsHTML = `
-        <h3>Correlation Results:</h3>
         <p>Correlation: ${correlationValue}</p>
         <p>${explainer_text.correlation}</p>
         
@@ -270,3 +271,4 @@ function initializeCollapsibles() {
         });
     });
 }
+
