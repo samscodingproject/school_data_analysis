@@ -76,6 +76,12 @@ body {
     height: auto; /* This will keep the aspect ratio */
   }
 
+  .medium-image {
+    width: 300px; /* Set this to the size you want */
+    height: auto; /* This will keep the aspect ratio */
+    margin-bottom: 30px;
+  }
+
 .button-primary {
     background-color: #2979ff; /* Bright primary color */
     color: white;
