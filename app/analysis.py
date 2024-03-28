@@ -45,6 +45,36 @@ def identify_low_z_scores(marks_df):
     low_z_scores_df = marks_df[marks_df['zScore'] < -1.2]
     return low_z_scores_df
 
+def calculate_year_group_attendance_summary(attendance_df):
+    # Calculate the average attendance for each student
+    student_attendance = attendance_df.groupby(['StudentID', 'School Year'])['Percentage'].mean().reset_index()
+    
+    # Calculate summary statistics for each year group
+    year_group_summary = student_attendance.groupby('School Year')['Percentage'].agg(['mean', 'median', 'min', 'max', 'std']).reset_index()
+    
+    
+    student_attendance['AboveThreshold'] = student_attendance['Percentage'] > 90
+    attendance_above_90 = student_attendance.groupby('School Year')['AboveThreshold'].mean() * 100
+    year_group_summary = year_group_summary.merge(attendance_above_90.reset_index(name='PercentageAbove90'), on='School Year', how='left')
+    year_group_summary['PercentageAbove90'] = year_group_summary['PercentageAbove90'].fillna(0)
+    
+    # Generate a bar chart comparing the average attendance across year groups
+    plt.figure(figsize=(8, 6))
+    plt.hist(attendance_df['Percentage'], bins=20, alpha=0.7)
+    plt.xlabel('Attendance Percentage')
+    plt.ylabel('Number of Students')
+    plt.title('Distribution of Attendance Percentages')
+    
+    # Save the histogram image to the static images folder
+    static_folder = os.path.join(os.path.dirname(__file__), 'static', 'images')
+    os.makedirs(static_folder, exist_ok=True)
+    histogram_path = os.path.join(static_folder, 'attendance_distribution_histogram.png')
+    plt.savefig(histogram_path)
+    plt.close()
+    
+    return year_group_summary.to_dict(orient='records')
+
+
 def identify_students_with_subjects_below_threshold(marks_df):
     # Filter rows with low Z-scores
     low_z_scores = marks_df[marks_df['zScore'] < -1.2]
@@ -256,12 +286,19 @@ def perform_comprehensive_analysis(attendance_file, marks_file):
     print("Correlation Analysis:")  # Debugging statement
     print(correlation_analysis)  # Debugging statement
 
+    year_group_attendance_summary = calculate_year_group_attendance_summary(attendance_df)
+    
+    print("Year Group Attendance Summary:")  # Debugging statement
+    print(year_group_attendance_summary)  # Debugging statement
+
     results = {
         "low_z_scores": low_z_scores_df.to_dict(orient='records'),
         "students_below_threshold_in_multiple_subjects": subjects_below_threshold.to_dict(orient='records'),
         "average_marks_by_class": average_marks_by_class.to_dict(),
         "correlation_analysis": correlation_analysis,
-        "plot_filename": correlation_analysis['plot_filename']
+        "plot_filename": correlation_analysis['plot_filename'],
+        "year_group_attendance_summary": year_group_attendance_summary
+
     }
     
     results = {key: replace_nan(value) for key, value in results.items()}

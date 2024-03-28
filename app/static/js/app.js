@@ -21,7 +21,8 @@ document.getElementById('uploadForm').addEventListener('submit', async function(
         createCollapsibleSection('Low Z-Scores', data.low_z_scores || [], displayLowZScoresResults);
         createCollapsibleSection('Average Marks by Class', data.average_marks_by_class || {}, displayAverageMarksByClass);
         createCollapsibleSection('Students Below Threshold in Multiple Subjects', data.students_below_threshold_in_multiple_subjects || {}, displayStudentsBelowThreshold);
-        
+        createCollapsibleSection('Year Group Attendance Summary', data.year_group_attendance_summary || [], displayYearGroupAttendanceSummary);
+
         // Initialize the collapsible sections to make them functional
         initializeCollapsibles();
 
@@ -191,7 +192,52 @@ function displaySelectedClasses(selectedClasses, averageMarks, selectedClassesCo
     }
 }
 
+function displayYearGroupAttendanceSummary(yearGroupAttendanceSummary, container) {
+    container.innerHTML = ''; // Clear the container
+    if (yearGroupAttendanceSummary.length === 0) {
+        container.innerHTML = '<p>No year group attendance summary data available.</p>';
+        return;
+    }
+    
+    const table = document.createElement('table');
+    table.innerHTML = `
+        <thead>
+            <tr>
+                <th>School Year</th>
+                <th>Mean</th>
+                <th>Median</th>
+                <th>Min</th>
+                <th>Max</th>
+                <th>Std</th>
+                <th>Percentage Above 90%</th>
+            </tr>
+        </thead>
+    `;
+    
+    const tbody = document.createElement('tbody');
+    yearGroupAttendanceSummary.forEach(item => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td>${item['School Year']}</td>
+            <td>${toFixedIfNumber(item.mean)}</td>
+            <td>${toFixedIfNumber(item.median)}</td>
+            <td>${toFixedIfNumber(item.min)}</td>
+            <td>${toFixedIfNumber(item.max)}</td>
+            <td>${toFixedIfNumber(item.std)}</td>
+            <td>${toFixedIfNumber(item.PercentageAbove90)}%</td>
+        `;
+        tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+    container.appendChild(table);
 
+    const histogramDiv = document.createElement('div');
+    histogramDiv.innerHTML = `
+        <h4>Distribution of Attendance Percentages</h4>
+        <img src="/static/images/attendance_distribution_histogram.png" alt="Attendance Distribution Histogram">
+    `;
+    container.appendChild(histogramDiv);
+}
 
 function toFixedIfNumber(value, digits = 2) {
     return typeof value === 'number' ? value.toFixed(digits) : 'N/A';
