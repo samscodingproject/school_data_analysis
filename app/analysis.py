@@ -6,6 +6,10 @@ import matplotlib
 from celery import Celery
 import os
 import re
+from flask import jsonify
+import json
+
+
 
 app = Celery('tasks', broker='redis://localhost:6479')
 
@@ -20,24 +24,51 @@ def read_excel_file(file_path):
 
 def preprocess_data(attendance_df, marks_df):
     try:
-        # Example validation: Check required columns exist
+        print("\nPreprocessing data...")
+        print("Initial Attendance DataFrame shape:", attendance_df.shape)
+        print("Initial Marks DataFrame shape:", marks_df.shape)
+        
+        # Log initial data overview
+        print("Initial attendance DataFrame sample:")
+        print(attendance_df.head())
+        print("Unique subjects in Attendance DataFrame:", attendance_df["Subject"].unique())
+
+        # Validate required columns in marks DataFrame
         required_columns = ['T1Weight', 'T2Weight', 'T3Weight']
         for col in required_columns:
             if col not in marks_df.columns:
                 raise ValueError(f"Missing required column in marks data: {col}")
+        print("Required columns check passed.")
+        
         # Calculate Final Marks
         marks_df['CalculatedFinalMark'] = marks_df['T1Weight'] + marks_df['T2Weight'] + marks_df['T3Weight']
-    
-        # Filter Attendance Data
-        filtered_attendance_df = attendance_df[(attendance_df['Class Time'] >= 1000) & (~attendance_df['Class'].str.contains("MEN"))]
-        overall_attendance = filtered_attendance_df[filtered_attendance_df['Class'] == 'Overall'].copy()
-        overall_attendance.loc[:, 'OverallAttendancePercentage'] = 100 - (overall_attendance['Absence Time'] / overall_attendance['Class Time'] * 100)
-
+        print("Calculated final marks.")
         
-        return marks_df, overall_attendance
+        # Filter Attendance Data
+        print("\nFiltering Attendance Data...")
+        filtered_attendance_df = attendance_df[(attendance_df['Class Time'] >= 1000) & (~attendance_df['Class'].str.contains("MEN"))]
+        print("Filtered Attendance DataFrame shape:", filtered_attendance_df.shape)
+        print("Filtered unique values in 'Subject' column after filtering:", filtered_attendance_df['Subject'].unique())
+        
+        # Calculate Overall Attendance Percentage (without narrowing down to 'Overall' class only)
+        # Assuming 'Absence Time' and 'Class Time' are columns that exist for all records
+        filtered_attendance_df.loc[:, 'OverallAttendancePercentage'] = 100 - (filtered_attendance_df['Absence Time'] / filtered_attendance_df['Class Time'] * 100)
+        print("Calculated overall attendance percentage for all records.")
 
+        # Log final shapes and sample data
+        print("\nPreprocessing complete.")
+        print("Final Marks DataFrame shape:", marks_df.shape)
+        print("Final Filtered Attendance DataFrame shape:", filtered_attendance_df.shape)
+        
+        print("Final DataFrames sample:")
+        print(marks_df.head())
+        print(filtered_attendance_df.head())
+
+        return marks_df, filtered_attendance_df
     except Exception as e:
-        raise ValueError(f"Data preprocessing failed: {e}")
+        print(f"Error during preprocessing: {e}")
+
+
     
 
 def identify_low_z_scores(marks_df):
@@ -89,6 +120,43 @@ def identify_students_with_subjects_below_threshold(marks_df):
     subjects_below_threshold = subjects_below_threshold.sort_values(by='SubjectCount', ascending=False)
     
     return subjects_below_threshold
+
+def identify_students_below_attendance_threshold(attendance_df, threshold):
+    print("Attendance DataFrame Subjects:")
+    print(attendance_df["Subject"].unique())
+    
+    # Group by StudentID and Subject, and calculate the percentage for each group
+    student_subject_percentage = attendance_df.groupby(['StudentID', 'Subject'])['Percentage'].first().reset_index()
+    print("\nStudent-Subject Percentage:")
+    print(student_subject_percentage.head())
+    
+    # Filter rows below the attendance threshold
+    below_threshold = student_subject_percentage[student_subject_percentage['Percentage'] < threshold]
+    print('\nStudents below attendance threshold:')
+    print(below_threshold)
+    
+    print("\nNumber of student-subject combinations below threshold:")
+    print(len(below_threshold))
+    
+    print("\nUnique students below threshold:")
+    print(below_threshold['StudentID'].unique())
+    
+    # Group by StudentID and aggregate the subjects into a list
+    students_below_threshold = below_threshold.groupby('StudentID')['Subject'].apply(list).reset_index(name='Subjects')
+    print("\nStudents below threshold (grouped by StudentID):")
+    print(students_below_threshold)
+    
+    # Count the number of subjects below the threshold for each student
+    students_below_threshold['SubjectCount'] = students_below_threshold['Subjects'].apply(len)
+    print("\nStudents below threshold (with subject count):")
+    print(students_below_threshold)
+    
+    # Sort the results by the number of subjects in descending order
+    students_below_threshold = students_below_threshold.sort_values(by='SubjectCount', ascending=False)
+    print("\nStudents below threshold (sorted by subject count):")
+    print(students_below_threshold)
+    
+    return students_below_threshold
 
 def calculate_average_marks_by_class(marks_df):
     return marks_df.groupby('Class')['CalculatedFinalMark'].mean()
@@ -235,72 +303,94 @@ def replace_nan(obj):
     return obj
 
 def perform_comprehensive_analysis(attendance_file, marks_file):
-    attendance_df = read_excel_file(attendance_file)
-    marks_df = read_excel_file(marks_file)
-    
-    class_to_subject = marks_df[['Class', 'Subject']].drop_duplicates().set_index('Class')['Subject'].to_dict()
+    def log_message(message):
+        # Emit the log message to the front-end with event type "log"
+        yield f"event: log\ndata: {message}\n\n"
 
-    # Define a function to find the closest match for a class name
-    def find_closest_match(class_name, class_to_subject):
-        closest_match = None
-        closest_distance = float('inf')
-        for pattern, subject in class_to_subject.items():
-            distance = len(re.sub(pattern, '', class_name)) + len(re.sub(class_name, '', pattern))
-            if distance < closest_distance:
-                closest_match = subject
-                closest_distance = distance
-        return closest_match
+    try:
+        log_message("Reading attendance and marks files...")
+        attendance_df = read_excel_file(attendance_file)
+        marks_df = read_excel_file(marks_file)
 
-    # Map the classes in the attendance data to their respective subjects
-    attendance_df['Subject'] = attendance_df['Class'].apply(lambda x: class_to_subject.get(x, find_closest_match(x, class_to_subject)))
+        log_message("Mapping classes to subjects...")
+        class_to_subject = marks_df[['Class', 'Subject']].drop_duplicates().set_index('Class')['Subject'].to_dict()
 
-    # Identify missing subjects
-    missing_subjects = attendance_df[attendance_df['Subject'].isna()]['Class'].unique()
-    if len(missing_subjects) > 0:
-        print("Warning: Missing subjects for the following classes:", ", ".join(missing_subjects))
+        # Define a function to find the closest match for a class name
+        def find_closest_match(class_name, class_to_subject):
+            closest_match = None
+            closest_distance = float('inf')
+            for pattern, subject in class_to_subject.items():
+                distance = len(re.sub(pattern, '', class_name)) + len(re.sub(class_name, '', pattern))
+                if distance < closest_distance:
+                    closest_match = subject
+                    closest_distance = distance
+            return closest_match
 
-    # Drop rows where the subject is not found in the mapping
-    attendance_df = attendance_df.dropna(subset=['Subject'])
+        # Map the classes in the attendance data to their respective subjects
+        attendance_df['Subject'] = attendance_df['Class'].apply(lambda x: class_to_subject.get(x, find_closest_match(x, class_to_subject)))
+        print("attendance Data origional")
 
-    marks_df, attendance_df = preprocess_data(attendance_df, marks_df)
-    
-    low_z_scores_df = identify_low_z_scores(marks_df)
+        print(attendance_df["Subject"].unique())
 
-    print("Low Z-Scores DataFrame:")  # Debugging statement
-    print(low_z_scores_df)  # Debugging statement
-    print("Number of students with low z-scores:", len(low_z_scores_df['StudentID'].unique()))  # Debugging statement
-    
-    subjects_below_threshold = identify_students_with_subjects_below_threshold(marks_df)
 
-    print("Subjects Below Threshold DataFrame:")  # Debugging statement
-    print(subjects_below_threshold)  # Debugging statement
-    print("Number of students with subjects below threshold:", len(subjects_below_threshold))  # Debugging statement
-    
-    average_marks_by_class = calculate_average_marks_by_class(marks_df)
+        log_message("Identifying missing subjects...")
+        print("Identifying missing subjects")
+        # Identify missing subjects
+        missing_subjects = attendance_df[attendance_df['Subject'].isna()]['Class'].unique()
+        if len(missing_subjects) > 0:
+            log_message(f"Warning: Missing subjects for the following classes: {', '.join(missing_subjects)}")
+            print("The following are the missing subjects")
+            print(missing_subjects)
 
-    print("Average Marks by Class:")  # Debugging statement
-    print(average_marks_by_class)  # Debugging statement
-    
-    correlation_analysis = analyze_correlation_and_prepare_scatter_plot_data(attendance_df, marks_df)
-   
-    print("Correlation Analysis:")  # Debugging statement
-    print(correlation_analysis)  # Debugging statement
+        # Drop rows where the subject is not found in the mapping
+        attendance_df = attendance_df.dropna(subset=['Subject'])
+        print("attendance Data after dropna")
 
-    year_group_attendance_summary = calculate_year_group_attendance_summary(attendance_df)
-    
-    print("Year Group Attendance Summary:")  # Debugging statement
-    print(year_group_attendance_summary)  # Debugging statement
+        print(attendance_df["Subject"].unique())
 
-    results = {
-        "low_z_scores": low_z_scores_df.to_dict(orient='records'),
-        "students_below_threshold_in_multiple_subjects": subjects_below_threshold.to_dict(orient='records'),
-        "average_marks_by_class": average_marks_by_class.to_dict(),
-        "correlation_analysis": correlation_analysis,
-        "plot_filename": correlation_analysis['plot_filename'],
-        "year_group_attendance_summary": year_group_attendance_summary
+        log_message("Preprocessing data...")
+        marks_df, attendance_df = preprocess_data(attendance_df, marks_df)
+        print("attendance Data after preprocess")
+        print(attendance_df["Subject"].unique())
 
-    }
-    
-    results = {key: replace_nan(value) for key, value in results.items()}
 
-    return results
+        log_message("Identifying low Z-scores...")
+        low_z_scores_df = identify_low_z_scores(marks_df)
+        log_message(f"Number of students with low z-scores: {len(low_z_scores_df['StudentID'].unique())}")
+
+        log_message("Identifying students with subjects below threshold...")
+        subjects_below_threshold = identify_students_with_subjects_below_threshold(marks_df)
+        log_message(f"Number of students with subjects below threshold: {len(subjects_below_threshold)}")
+
+        log_message("Calculating average marks by class...")
+        average_marks_by_class = calculate_average_marks_by_class(marks_df)
+
+        log_message("Analyzing correlation and preparing scatter plot...")
+        correlation_analysis = analyze_correlation_and_prepare_scatter_plot_data(attendance_df, marks_df)
+
+        log_message("Calculating year group attendance summary...")
+        year_group_attendance_summary = calculate_year_group_attendance_summary(attendance_df)
+
+        log_message("Identifying students below attendance threshold...")
+        students_below_attendance_threshold = identify_students_below_attendance_threshold(attendance_df, threshold=85)
+
+        log_message("Analysis completed successfully.")
+        
+        results = {
+            "low_z_scores": low_z_scores_df.to_dict(orient='records'),
+            "students_below_threshold_in_multiple_subjects": subjects_below_threshold.to_dict(orient='records'),
+            "average_marks_by_class": average_marks_by_class.to_dict(),
+            "correlation_analysis": correlation_analysis,
+            "plot_filename": correlation_analysis['plot_filename'],
+            "year_group_attendance_summary": year_group_attendance_summary,
+            "students_below_attendance_threshold": students_below_attendance_threshold.to_dict(orient='records')
+        }
+        results = {key: replace_nan(value) for key, value in results.items()}
+        
+        # Send the final response data as JSON with event type "result"
+        yield f"event: result\ndata: {json.dumps(results)}\n\n"
+
+
+    except Exception as e:
+        log_message(f"An error occurred during analysis: {str(e)}")
+        raise

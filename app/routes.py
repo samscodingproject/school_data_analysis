@@ -1,7 +1,7 @@
 from docx import Document
 from app.analysis import perform_comprehensive_analysis
 from .utils import allowed_file, save_temp_files
-from flask import Blueprint, render_template, request, jsonify, flash, redirect, url_for, flash, send_file, current_app, session
+from flask import Blueprint, render_template, request, jsonify, flash, redirect, url_for, flash, send_file, current_app, session, stream_with_context, Response
 import os
 import pandas as pd
 from .report_generator import generate_student_report
@@ -77,7 +77,7 @@ def upload_files():
         marks_df = pd.read_excel(temp_marks_path)
 
         # Check for required columns in the attendance file
-        required_attendance_columns = ['StudentID','Class', 'Percentage']
+        required_attendance_columns = ['StudentID', 'Class', 'Percentage']
         missing_attendance_columns = [col for col in required_attendance_columns if col not in attendance_df.columns]
         if missing_attendance_columns:
             error_message = f"The attendance file is missing the following required columns: {', '.join(missing_attendance_columns)}. " \
@@ -86,7 +86,7 @@ def upload_files():
             return jsonify({'error': error_message}), 400
 
         # Check for required columns in the marks file
-        required_marks_columns = ['StudentID', 'Subject','Class','T1','T2','T3','T1Weight','T2Weight','T3Weight', 'FinalMark']
+        required_marks_columns = ['StudentID', 'Subject', 'Class', 'T1', 'T2', 'T3', 'T1Weight', 'T2Weight', 'T3Weight', 'FinalMark']
         missing_marks_columns = [col for col in required_marks_columns if col not in marks_df.columns]
         if missing_marks_columns:
             error_message = f"The marks file is missing the following required columns: {', '.join(missing_marks_columns)}. " \
@@ -94,29 +94,16 @@ def upload_files():
             print(error_message)
             return jsonify({'error': error_message}), 400
 
-        # Perform analysis
-        print("Calling perform_comprehensive_analysis")
-        results = perform_comprehensive_analysis(temp_attendance_path, temp_marks_path)
-
-        # Generate a temporary file path
-        _, temp_file_path = tempfile.mkstemp(suffix='.pkl')
-
-        # After saving the temporary files...
-        logging.info(f"Temp attendance file saved at {temp_attendance_path}")
-        logging.info(f"Temp marks file saved at {temp_marks_path}")
-        session['attendance_file'] = temp_attendance_path
-        session['marks_file'] = temp_marks_path
-
-        # Use pickle to save the results dictionary
-        with open(temp_file_path, 'wb') as f:
-            pickle.dump(results, f)
-
-        # Store the path to this temporary file in the session
-        session['processed_data_file'] = temp_file_path
-
-        # Return analysis results as JSON
-        return jsonify(results)
-
+        # Perform analysis and stream log messages
+        analysis_log_stream = stream_with_context(perform_comprehensive_analysis(temp_attendance_path, temp_marks_path))
+        
+        # Create a response object with the log stream and final response data
+        response = Response(analysis_log_stream, mimetype='text/event-stream')
+        response.headers['Cache-Control'] = 'no-cache'
+        response.headers['X-Accel-Buffering'] = 'no'
+        
+        return response
+    
     except KeyError as e:
         missing_column = str(e).strip("'[]'")
         if missing_column in ['StudentID', 'AttendancePercentage']:

@@ -10,13 +10,42 @@
     <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
     <!-- Include Select2 JS -->
     <script src="https://cdn.jsdelivr.net/npm/select2/dist/js/select2.min.js"></script>
+    <style>
+        .loading-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            z-index: 9999;
+        }
+
+        .loading-spinner {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #3498db;
+            animation: spin 2s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
 </head>
 <body>
     <div class="container">
         <header class="header">
             <img src="/static/images/School Scope (2).png" alt="School Scope Logo" class="medium-image centered-image">
             <img src="/static/images/st-mary-logo.png" alt="St. Mary Logo" class="small-image centered-image">
-            
             <h1>Upload Attendance and Marks Files</h1>
             <div class="template-downloads">
                 <a href="/static/templates/Attendance Data Template.xlsx" download="Attendance Data Template.xlsx" class="button button-primary">Download Attendance Data Template</a>
@@ -34,19 +63,45 @@
             </div>
             <button type="submit" class="button button-primary">Analyse</button>
         </form>
-
         <!-- Placeholder for displaying messages (errors/success) -->
         <div id="messages" class="messages"></div>
-
         <!-- Placeholder for dynamically generated analysis results -->
-        <section id="analysisResults" class="analysis-results"></section>
-
+        <section id="analysisResults" class="analysis-results">
+            <!-- Correlation and Scatter Plot Section -->
+            <div id="correlationAndScatterPlotSection"></div>
+            <!-- Low Z-Scores Section -->
+            <div id="lowZScoresSection"></div>
+            <!-- Average Marks by Class Section -->
+            <div id="averageMarksByClassSection"></div>
+            <!-- Students Below Threshold in Multiple Subjects Section -->
+            <div id="studentsBelowThresholdSection"></div>
+            <!-- Year Group Attendance Summary Section -->
+            <div id="yearGroupAttendanceSummarySection"></div>
+            <!-- Students Below Attendance Threshold Section -->
+            <div id="studentsBelowAttendanceThresholdSection"></div>
+        </section>
         <!-- Container for displaying selected classes' average marks -->
         <div id="selectedClassesContainer" class="selected-classes"></div>
-
         <button id="downloadReportBtn" class="button button-primary" style="display: none;">Download Report</button>
+    
+    
+    <!-- Loading overlay -->
+    <div id="loadingOverlay" class="loading-overlay">
+        <div class="loading-spinner"></div>
+        <div class="loading-text">Performing Analysis...</div>
     </div>
 
+    <!-- Open Analysis Log button -->
+    <button id="openAnalysisLogBtn" class="button button-primary" style="display: none;">Open Analysis Log</button>
+
+    <!-- Analysis log modal -->
+    <div id="analysisLogModal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h2>Analysis Log</h2>
+            <pre id="analysisLog"></pre>
+        </div>
+    </div>
     <!-- Include your custom JavaScript -->
     <script src="/static/js/app.js"></script>
 </body>
