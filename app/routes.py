@@ -65,6 +65,10 @@ def upload_files():
         return jsonify({'error': error_message}), 400
 
     try:
+
+        low_attendance_threshold = float(request.form.get('lowAttendanceThreshold', 85))
+        high_marks_threshold = float(request.form.get('highMarksThreshold', 1.2))
+
         # Temporarily save files for processing
         print("Saving files temporarily")
         temp_attendance_path, temp_marks_path = save_temp_files(attendance_file, marks_file)
@@ -95,7 +99,7 @@ def upload_files():
             return jsonify({'error': error_message}), 400
 
         # Perform analysis and stream log messages
-        analysis_log_stream = stream_with_context(perform_comprehensive_analysis(temp_attendance_path, temp_marks_path))
+        analysis_log_stream = stream_with_context(perform_comprehensive_analysis(temp_attendance_path, temp_marks_path, low_attendance_threshold, high_marks_threshold))
         
         # Create a response object with the log stream and final response data
         response = Response(analysis_log_stream, mimetype='text/event-stream')
@@ -138,6 +142,11 @@ def upload_files():
         error_message = f"An unexpected error occurred: {str(e)}. Please try again or contact support for assistance."
         print(error_message)
         return jsonify({'error': error_message}), 500
+      
+    except ValueError:
+        error_message = "Invalid threshold values. Please provide valid numerical values for attendance and marks thresholds."
+        print(error_message)
+        return jsonify({'error': error_message}), 400
 
 
 def cleanup_files(temp_attendance_path, temp_marks_path):
@@ -310,3 +319,6 @@ def download_report():
         flash("Failed to generate the report.", "error")
         print(f"Report generation failed: {e}")
         return redirect(url_for('main.index'))
+
+from .analysis import identify_students_below_attendance_threshold
+

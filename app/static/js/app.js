@@ -8,6 +8,13 @@ document.getElementById('uploadForm').addEventListener('submit', async function 
     document.getElementById('analysisLog').textContent = '';
 
     const formData = new FormData(this);
+
+    // Add threshold values to the form data
+    const lowAttendanceThreshold = document.getElementById('lowAttendanceThreshold').value;
+    const highMarksThreshold = document.getElementById('highMarksThreshold').value;
+    formData.append('lowAttendanceThreshold', lowAttendanceThreshold);
+    formData.append('highMarksThreshold', highMarksThreshold);
+
     document.getElementById('analysisResults').innerHTML = ''; // Clear previous results
     document.getElementById('downloadReportBtn').style.display = 'none'; // Ensure button is hidden initially
 
@@ -52,17 +59,15 @@ document.getElementById('uploadForm').addEventListener('submit', async function 
         // Dynamically create and display all sections with the new data
         displayCorrelationAndScatterPlotResults(result.correlation_analysis || {}, result.plot_filename);
         createCollapsibleSection('Year Group Attendance Summary', result.year_group_attendance_summary || [], displayYearGroupAttendanceSummary);
-        createCollapsibleSection('Low Z-Scores', result.low_z_scores || [], displayLowZScoresResults);
+        createCollapsibleSection('Students With Low Marks (Individual Subjects)', result.low_z_scores || [], displayLowZScoresResults);
+        createCollapsibleSection('High Achievers (By Subject Z-score)', result.high_z_scores || [], displayHighZScoresResults);
         createCollapsibleSection('Average Marks by Class', result.average_marks_by_class || {}, displayAverageMarksByClass);
-        createCollapsibleSection('Students Below Threshold in Multiple Subjects', result.students_below_threshold_in_multiple_subjects || {}, displayStudentsBelowThreshold);
+        createCollapsibleSection('Students Below Marks Threshold in Multiple Subjects', result.students_below_threshold_in_multiple_subjects || {}, displayStudentsBelowThreshold);
         createCollapsibleSection(
             'Students Below Attendance Threshold',
             result.students_below_attendance_threshold || [],
             displayStudentsBelowAttendanceThreshold
         );
-
-        // Initialize the collapsible sections to make them functional
-        initializeCollapsibles();
 
         // Show the download button after successful data processing
         document.getElementById('downloadReportBtn').style.display = 'inline-block';
@@ -83,50 +88,61 @@ document.getElementById('uploadForm').addEventListener('submit', async function 
     }
 });
 
-// Function to display the students below attendance threshold section
-function displayStudentsBelowAttendanceThreshold(data, container) {
-    container.innerHTML = ''; // Clear the container
-
-    // Create the input field and button
-    const inputField = document.createElement('input');
-    inputField.type = 'number';
-    inputField.id = 'attendanceThresholdInput';
-    inputField.placeholder = 'Enter attendance threshold';
-
-    const button = document.createElement('button');
-    button.textContent = 'Show Students Below Threshold';
-    button.onclick = function() {
-        const threshold = parseFloat(inputField.value);
-
-        if (isNaN(threshold)) {
-            alert('Please enter a valid attendance threshold.');
-            return;
-        }
-
-        // Filter the data based on the threshold
-        const filteredData = data.filter(student => student.SubjectCount > 0);
-
-        // Display the filtered results
-        displayFilteredResults(filteredData, container);
-    };
-
-    container.appendChild(inputField);
-    container.appendChild(button);
-}
-
-// Function to display the filtered results
-// Function to display the filtered results
-function displayFilteredResults(data, container) {
+function displayHighZScoresResults(highZScores, container) {
     // Check and remove existing results container if it exists
-    const existingResultsContainer = document.getElementById('studentsBelowAttendanceThresholdContainer');
+    const existingResultsContainer = container.querySelector('.high-z-score-results');
     if (existingResultsContainer) {
-        container.removeChild(existingResultsContainer);
+        existingResultsContainer.remove();
     }
 
-    // Proceed to create a new results container and display the data
+    // Create a new container for the results
     const resultsContainer = document.createElement('div');
-    resultsContainer.id = 'studentsBelowAttendanceThresholdContainer';
+    resultsContainer.className = 'high-z-score-results';
+
+    if (highZScores.length === 0) {
+        resultsContainer.innerHTML = '<p>No students found with high Z-scores.</p>';
+    } else {
+        const table = document.createElement('table');
+        table.innerHTML = `
+            <thead>
+                <tr>
+                    <th>StudentID</th>
+                    <th>Subject</th>
+                    <th>Z-Score</th>
+                </tr>
+            </thead>
+        `;
+
+        const tbody = document.createElement('tbody');
+        highZScores.forEach(item => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td>${item.StudentID}</td>
+                <td>${item.Subject}</td>
+                <td>${item.zScore.toFixed(2)}</td>
+            `;
+            tbody.appendChild(tr);
+        });
+
+        table.appendChild(tbody);
+        resultsContainer.appendChild(table);
+    }
+
+    // Append the results container to the collapsible section
     container.appendChild(resultsContainer);
+}
+
+
+function displayFilteredResults(data, container, threshold) {
+    // Check and remove existing results container if it exists
+    const existingResultsContainer = container.querySelector('.attendance-threshold-results');
+    if (existingResultsContainer) {
+        existingResultsContainer.remove();
+    }
+
+    // Create a new container for the results
+    const resultsContainer = document.createElement('div');
+    resultsContainer.className = 'attendance-threshold-results';
 
     if (data.length === 0) {
         resultsContainer.innerHTML = '<p>No students found below the specified attendance threshold.</p>';
@@ -156,8 +172,65 @@ function displayFilteredResults(data, container) {
         table.appendChild(tbody);
         resultsContainer.appendChild(table);
     }
+
+    // Append the results container to the collapsible section
+    container.appendChild(resultsContainer);
+
+    // Clear the input field after displaying the results
+    const inputField = document.getElementById('attendanceThresholdInput');
+    inputField.value = '';
 }
 
+function clearResults(container) {
+    const resultsContainer = container.querySelector('.attendance-threshold-results');
+    if (resultsContainer) {
+        resultsContainer.innerHTML = '';
+    }
+}
+
+function displayStudentsBelowAttendanceThreshold(data, container) {
+    // Check and remove existing results container if it exists
+    const existingResultsContainer = container.querySelector('.attendance-threshold-results');
+    if (existingResultsContainer) {
+        existingResultsContainer.remove();
+    }
+
+    // Create a new container for the results
+    const resultsContainer = document.createElement('div');
+    resultsContainer.className = 'attendance-threshold-results';
+
+    if (data.length === 0) {
+        resultsContainer.innerHTML = '<p>No students found below the specified attendance threshold.</p>';
+    } else {
+        const table = document.createElement('table');
+        table.innerHTML = `
+            <thead>
+                <tr>
+                    <th>StudentID</th>
+                    <th>Subjects Below Threshold</th>
+                    <th>Number of Subjects Below Threshold</th>
+                </tr>
+            </thead>
+        `;
+
+        const tbody = document.createElement('tbody');
+        data.forEach(student => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td>${student.StudentID}</td>
+                <td>${student.Subjects.join(', ')}</td>
+                <td>${student.SubjectCount}</td>
+            `;
+            tbody.appendChild(tr);
+        });
+
+        table.appendChild(tbody);
+        resultsContainer.appendChild(table);
+    }
+
+    // Append the results container to the collapsible section
+    container.appendChild(resultsContainer);
+}
 
 document.getElementById('downloadReportBtn').addEventListener('click', function() {
     window.location.href = '/download_report'; // Adjust the route if necessary
@@ -423,8 +496,19 @@ function createCollapsibleSection(title, data, displayFunction) {
     section.appendChild(contentDiv);
     document.getElementById('analysisResults').appendChild(section);
 
-    // Use the display function to populate the contentDiv with data
-    displayFunction(data, contentDiv);
+    // Add event listener to the collapsible button
+    button.addEventListener('click', function() {
+        this.classList.toggle('active');
+        if (this.classList.contains('active')) {
+            contentDiv.style.display = 'block';
+            // Execute the display function when the collapsible section is expanded
+            displayFunction(data, contentDiv);
+        } else {
+            contentDiv.style.display = 'none';
+            // Clear the content when the collapsible section is collapsed
+            contentDiv.innerHTML = '';
+        }
+    });
 }
 
 function initializeCollapsibles() {

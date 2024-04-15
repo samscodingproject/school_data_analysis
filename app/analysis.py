@@ -6,8 +6,9 @@ import matplotlib
 from celery import Celery
 import os
 import re
-from flask import jsonify
+from flask import jsonify, session
 import json
+
 
 
 
@@ -122,40 +123,26 @@ def identify_students_with_subjects_below_threshold(marks_df):
     return subjects_below_threshold
 
 def identify_students_below_attendance_threshold(attendance_df, threshold):
-    print("Attendance DataFrame Subjects:")
-    print(attendance_df["Subject"].unique())
-    
     # Group by StudentID and Subject, and calculate the percentage for each group
-    student_subject_percentage = attendance_df.groupby(['StudentID', 'Subject'])['Percentage'].first().reset_index()
-    print("\nStudent-Subject Percentage:")
-    print(student_subject_percentage.head())
-    
+    student_subject_percentage = attendance_df.groupby(['StudentID', 'Subject'])['Percentage'].mean().reset_index()
+
     # Filter rows below the attendance threshold
     below_threshold = student_subject_percentage[student_subject_percentage['Percentage'] < threshold]
-    print('\nStudents below attendance threshold:')
-    print(below_threshold)
-    
-    print("\nNumber of student-subject combinations below threshold:")
-    print(len(below_threshold))
-    
-    print("\nUnique students below threshold:")
-    print(below_threshold['StudentID'].unique())
-    
-    # Group by StudentID and aggregate the subjects into a list
-    students_below_threshold = below_threshold.groupby('StudentID')['Subject'].apply(list).reset_index(name='Subjects')
-    print("\nStudents below threshold (grouped by StudentID):")
-    print(students_below_threshold)
-    
-    # Count the number of subjects below the threshold for each student
-    students_below_threshold['SubjectCount'] = students_below_threshold['Subjects'].apply(len)
-    print("\nStudents below threshold (with subject count):")
-    print(students_below_threshold)
-    
+
+    # Group by StudentID and aggregate the subjects and counts
+    students_below_threshold = (
+        below_threshold.groupby('StudentID')
+        .agg({
+            'Subject': list,
+            'Percentage': 'count'
+        })
+        .rename(columns={'Subject': 'Subjects', 'Percentage': 'SubjectCount'})
+        .reset_index()
+    )
+
     # Sort the results by the number of subjects in descending order
     students_below_threshold = students_below_threshold.sort_values(by='SubjectCount', ascending=False)
-    print("\nStudents below threshold (sorted by subject count):")
-    print(students_below_threshold)
-    
+
     return students_below_threshold
 
 def calculate_average_marks_by_class(marks_df):
@@ -190,6 +177,11 @@ def generate_regression_explainer(slope, intercept, r_value, p_value, std_err):
     regression_explainer += "A lower standard error indicates that the slope estimate is more precise.\n\n"
 
     return regression_explainer
+
+def identify_high_z_scores(marks_df, threshold):
+    marks_df['zScore'] = marks_df.groupby('Subject')['CalculatedFinalMark'].transform(lambda x: zscore(x, ddof=1))
+    high_z_scores_df = marks_df[marks_df['zScore'] > threshold]
+    return high_z_scores_df
 
 
 def analyze_correlation_and_prepare_scatter_plot_data(attendance_df, marks_df):
@@ -302,7 +294,7 @@ def replace_nan(obj):
         return obj.where(pd.notnull(obj), None).to_dict()
     return obj
 
-def perform_comprehensive_analysis(attendance_file, marks_file):
+def perform_comprehensive_analysis(attendance_file, marks_file, low_attendance_threshold, high_marks_threshold):
     def log_message(message):
         # Emit the log message to the front-end with event type "log"
         yield f"event: log\ndata: {message}\n\n"
@@ -331,7 +323,7 @@ def perform_comprehensive_analysis(attendance_file, marks_file):
         print("attendance Data origional")
 
         print(attendance_df["Subject"].unique())
-
+        session['attendance_df'] = attendance_df
 
         log_message("Identifying missing subjects...")
         print("Identifying missing subjects")
@@ -364,6 +356,11 @@ def perform_comprehensive_analysis(attendance_file, marks_file):
 
         log_message("Calculating average marks by class...")
         average_marks_by_class = calculate_average_marks_by_class(marks_df)
+        
+        log_message(f"Identifying high Z-scores above threshold {high_marks_threshold}...")
+        high_z_scores_df = identify_high_z_scores(marks_df, high_marks_threshold)   
+        log_message(f"Number of students with high z-scores: {len(high_z_scores_df['StudentID'].unique())}")
+
 
         log_message("Analyzing correlation and preparing scatter plot...")
         correlation_analysis = analyze_correlation_and_prepare_scatter_plot_data(attendance_df, marks_df)
@@ -371,8 +368,9 @@ def perform_comprehensive_analysis(attendance_file, marks_file):
         log_message("Calculating year group attendance summary...")
         year_group_attendance_summary = calculate_year_group_attendance_summary(attendance_df)
 
-        log_message("Identifying students below attendance threshold...")
-        students_below_attendance_threshold = identify_students_below_attendance_threshold(attendance_df, threshold=85)
+        log_message(f"Identifying students below attendance threshold {low_attendance_threshold}%...")
+        students_below_attendance_threshold = identify_students_below_attendance_threshold(attendance_df, low_attendance_threshold)
+
 
         log_message("Analysis completed successfully.")
         
@@ -381,6 +379,7 @@ def perform_comprehensive_analysis(attendance_file, marks_file):
             "students_below_threshold_in_multiple_subjects": subjects_below_threshold.to_dict(orient='records'),
             "average_marks_by_class": average_marks_by_class.to_dict(),
             "correlation_analysis": correlation_analysis,
+            "high_z_scores": high_z_scores_df.to_dict(orient='records'),
             "plot_filename": correlation_analysis['plot_filename'],
             "year_group_attendance_summary": year_group_attendance_summary,
             "students_below_attendance_threshold": students_below_attendance_threshold.to_dict(orient='records')

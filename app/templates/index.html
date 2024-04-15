@@ -61,6 +61,14 @@
                 <label for="marksFile">Upload Marks Data:</label>
                 <input type="file" id="marksFile" name="marksFile" accept=".xls,.xlsx" required>
             </div>
+            <div class="form-field">
+                <label for="lowAttendanceThreshold">Low Attendance Threshold (%):</label>
+                <input type="number" id="lowAttendanceThreshold" name="lowAttendanceThreshold" min="0" max="100" value="85" required>
+            </div>
+            <div class="form-field">
+                <label for="highMarksThreshold">High Marks Threshold (Z-score):</label>
+                <input type="number" id="highMarksThreshold" name="highMarksThreshold" step="0.1" value="1.2" required>
+            </div>
             <button type="submit" class="button button-primary">Analyse</button>
         </form>
         <!-- Placeholder for displaying messages (errors/success) -->
@@ -71,38 +79,38 @@
             <div id="correlationAndScatterPlotSection"></div>
             <!-- Low Z-Scores Section -->
             <div id="lowZScoresSection"></div>
+            <!-- High Z-Scores Section -->
+            <div id="highZScoresSection"></div>
             <!-- Average Marks by Class Section -->
             <div id="averageMarksByClassSection"></div>
             <!-- Students Below Threshold in Multiple Subjects Section -->
             <div id="studentsBelowThresholdSection"></div>
             <!-- Year Group Attendance Summary Section -->
             <div id="yearGroupAttendanceSummarySection"></div>
-            <!-- Students Below Attendance Threshold Section -->
-            <div id="studentsBelowAttendanceThresholdSection"></div>
         </section>
         <!-- Container for displaying selected classes' average marks -->
         <div id="selectedClassesContainer" class="selected-classes"></div>
         <button id="downloadReportBtn" class="button button-primary" style="display: none;">Download Report</button>
     
-    
-    <!-- Loading overlay -->
-    <div id="loadingOverlay" class="loading-overlay">
-        <div class="loading-spinner"></div>
-        <div class="loading-text">Performing Analysis...</div>
-    </div>
-
-    <!-- Open Analysis Log button -->
-    <button id="openAnalysisLogBtn" class="button button-primary" style="display: none;">Open Analysis Log</button>
-
-    <!-- Analysis log modal -->
-    <div id="analysisLogModal" class="modal">
-        <div class="modal-content">
-            <span class="close">&times;</span>
-            <h2>Analysis Log</h2>
-            <pre id="analysisLog"></pre>
+        <!-- Loading overlay -->
+        <div id="loadingOverlay" class="loading-overlay">
+            <div class="loading-spinner"></div>
+            <div class="loading-text">Performing Analysis...</div>
         </div>
+
+        <!-- Open Analysis Log button -->
+        <button id="openAnalysisLogBtn" class="button button-primary" style="display: none;">Open Analysis Log</button>
+
+        <!-- Analysis log modal -->
+        <div id="analysisLogModal" class="modal">
+            <div class="modal-content">
+                <span class="close">&times;</span>
+                <h2>Analysis Log</h2>
+                <pre id="analysisLog"></pre>
+            </div>
+        </div>
+        <!-- Include your custom JavaScript -->
+        <script src="/static/js/app.js"></script>
     </div>
-    <!-- Include your custom JavaScript -->
-    <script src="/static/js/app.js"></script>
 </body>
 </html>
