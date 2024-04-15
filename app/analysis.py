@@ -6,7 +6,7 @@ import matplotlib
 from celery import Celery
 import os
 import re
-from flask import jsonify, session
+from flask import jsonify, request, session
 import json
 
 
@@ -23,34 +23,47 @@ def read_excel_file(file_path):
     except Exception as e:
         raise ValueError(f"Failed to read Excel file: {e}")
 
+import tempfile
+from flask import session
+
 def preprocess_data(attendance_df, marks_df):
     try:
         print("\nPreprocessing data...")
         print("Initial Attendance DataFrame shape:", attendance_df.shape)
         print("Initial Marks DataFrame shape:", marks_df.shape)
-        
+
         # Log initial data overview
         print("Initial attendance DataFrame sample:")
         print(attendance_df.head())
-        print("Unique subjects in Attendance DataFrame:", attendance_df["Subject"].unique())
 
         # Validate required columns in marks DataFrame
-        required_columns = ['T1Weight', 'T2Weight', 'T3Weight']
-        for col in required_columns:
-            if col not in marks_df.columns:
-                raise ValueError(f"Missing required column in marks data: {col}")
-        print("Required columns check passed.")
-        
+        required_marks_columns = ['StudentID', 'Subject', 'Class', 'T1Weight', 'T2Weight', 'T3Weight']
+        missing_marks_columns = [col for col in required_marks_columns if col not in marks_df.columns]
+        if missing_marks_columns:
+            raise ValueError(f"Missing required columns in marks data: {', '.join(missing_marks_columns)}")
+        print("Required columns check passed for marks data.")
+
+        # Validate required columns in attendance DataFrame
+        required_attendance_columns = ['StudentID', 'Class', 'Percentage']
+        missing_attendance_columns = [col for col in required_attendance_columns if col not in attendance_df.columns]
+        if missing_attendance_columns:
+            raise ValueError(f"Missing required columns in attendance data: {', '.join(missing_attendance_columns)}")
+        print("Required columns check passed for attendance data.")
+
         # Calculate Final Marks
         marks_df['CalculatedFinalMark'] = marks_df['T1Weight'] + marks_df['T2Weight'] + marks_df['T3Weight']
         print("Calculated final marks.")
-        
+
         # Filter Attendance Data
         print("\nFiltering Attendance Data...")
         filtered_attendance_df = attendance_df[(attendance_df['Class Time'] >= 1000) & (~attendance_df['Class'].str.contains("MEN"))]
         print("Filtered Attendance DataFrame shape:", filtered_attendance_df.shape)
-        print("Filtered unique values in 'Subject' column after filtering:", filtered_attendance_df['Subject'].unique())
-        
+
+        # Map 'Class' to 'Subject' in the attendance DataFrame
+        class_to_subject = marks_df[['Class', 'Subject']].drop_duplicates().set_index('Class')['Subject'].to_dict()
+        filtered_attendance_df['Subject'] = filtered_attendance_df['Class'].map(class_to_subject)
+        print("Filtered unique values in 'Subject' column after mapping:", filtered_attendance_df['Subject'].unique())
+
         # Calculate Overall Attendance Percentage (without narrowing down to 'Overall' class only)
         # Assuming 'Absence Time' and 'Class Time' are columns that exist for all records
         filtered_attendance_df.loc[:, 'OverallAttendancePercentage'] = 100 - (filtered_attendance_df['Absence Time'] / filtered_attendance_df['Class Time'] * 100)
@@ -60,22 +73,54 @@ def preprocess_data(attendance_df, marks_df):
         print("\nPreprocessing complete.")
         print("Final Marks DataFrame shape:", marks_df.shape)
         print("Final Filtered Attendance DataFrame shape:", filtered_attendance_df.shape)
-        
         print("Final DataFrames sample:")
         print(marks_df.head())
         print(filtered_attendance_df.head())
 
+        # Store the DataFrames as temporary files and save the file paths in the session
+        # Store the DataFrames as temporary files and save the file paths in the session
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.pkl') as temp_marks_file:
+            marks_df.to_pickle(temp_marks_file.name)
+            session['marks_file'] = temp_marks_file.name
+
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.pkl') as temp_attendance_file:
+            filtered_attendance_df.to_pickle(temp_attendance_file.name)
+            session['attendance_file'] = temp_attendance_file.name
+
+        marks_df['zScore'] = marks_df.groupby('Subject')['CalculatedFinalMark'].transform(lambda x: zscore(x, ddof=1))
+
+
         return marks_df, filtered_attendance_df
+
+    except ValueError as e:
+        print(f"Error during preprocessing: {e}")
+        # Return empty DataFrames in case of a ValueError
+        return pd.DataFrame(), pd.DataFrame()
+
     except Exception as e:
         print(f"Error during preprocessing: {e}")
+        # Return empty DataFrames in case of any other exception
+        return pd.DataFrame(), pd.DataFrame()
 
+def get_student_marks(student_id, marks_df):
+    student_marks = marks_df[marks_df['StudentID'] == student_id]
+    return student_marks[['Subject', 'CalculatedFinalMark', 'zScore']].to_dict(orient='records')
 
-    
+def get_student_attendance(student_id, attendance_df):
+    student_attendance = attendance_df[attendance_df['StudentID'] == student_id]
+    return student_attendance[['Subject', 'OverallAttendancePercentage']].to_dict(orient='records')
 
-def identify_low_z_scores(marks_df):
+def identify_low_z_scores(marks_df, low_marks_threshold):
+    """Identify entries with z-scores below the specified threshold."""
     marks_df['zScore'] = marks_df.groupby('Subject')['CalculatedFinalMark'].transform(lambda x: zscore(x, ddof=1))
-    low_z_scores_df = marks_df[marks_df['zScore'] < -1.2]
+    low_z_scores_df = marks_df[marks_df['zScore'] < low_marks_threshold]
     return low_z_scores_df
+
+def identify_high_z_scores(marks_df, high_marks_threshold):
+    """Identify entries with z-scores above the specified threshold."""
+    marks_df['zScore'] = marks_df.groupby('Subject')['CalculatedFinalMark'].transform(lambda x: zscore(x, ddof=1))
+    high_z_scores_df = marks_df[marks_df['zScore'] > high_marks_threshold]
+    return high_z_scores_df
 
 def calculate_year_group_attendance_summary(attendance_df):
     # Calculate the average attendance for each student
@@ -106,10 +151,9 @@ def calculate_year_group_attendance_summary(attendance_df):
     
     return year_group_summary.to_dict(orient='records')
 
-
-def identify_students_with_subjects_below_threshold(marks_df):
-    # Filter rows with low Z-scores
-    low_z_scores = marks_df[marks_df['zScore'] < -1.2]
+def identify_students_with_subjects_below_threshold(marks_df, low_marks_threshold):
+    # Filter rows with z-scores below the specified low marks threshold
+    low_z_scores = marks_df[marks_df['zScore'] < low_marks_threshold]
     
     # Group by StudentID and aggregate the subjects into a list
     subjects_below_threshold = low_z_scores.groupby('StudentID')['Subject'].apply(list).reset_index(name='Subjects')
@@ -122,14 +166,11 @@ def identify_students_with_subjects_below_threshold(marks_df):
     
     return subjects_below_threshold
 
-def identify_students_below_attendance_threshold(attendance_df, threshold):
-    # Group by StudentID and Subject, and calculate the percentage for each group
-    student_subject_percentage = attendance_df.groupby(['StudentID', 'Subject'])['Percentage'].mean().reset_index()
-
-    # Filter rows below the attendance threshold
-    below_threshold = student_subject_percentage[student_subject_percentage['Percentage'] < threshold]
-
-    # Group by StudentID and aggregate the subjects and counts
+def identify_students_below_low_attendance_threshold(attendance_df, low_attendance_threshold):
+    print(f"Analyzing students below low attendance threshold: {low_attendance_threshold}%")
+    below_threshold = attendance_df[attendance_df['Percentage'] < low_attendance_threshold]
+    print(f"Found {len(below_threshold)} students below {low_attendance_threshold}% attendance.")
+    
     students_below_threshold = (
         below_threshold.groupby('StudentID')
         .agg({
@@ -139,11 +180,28 @@ def identify_students_below_attendance_threshold(attendance_df, threshold):
         .rename(columns={'Subject': 'Subjects', 'Percentage': 'SubjectCount'})
         .reset_index()
     )
-
-    # Sort the results by the number of subjects in descending order
-    students_below_threshold = students_below_threshold.sort_values(by='SubjectCount', ascending=False)
-
+    print(f"Details of students below threshold: {students_below_threshold}")
     return students_below_threshold
+
+
+def identify_students_above_high_attendance_threshold(attendance_df, high_attendance_threshold):
+    print(f"Analyzing students above high attendance threshold: {high_attendance_threshold}%")
+    above_threshold = attendance_df[attendance_df['Percentage'] > high_attendance_threshold]
+    print(f"Found {len(above_threshold)} students above {high_attendance_threshold}% attendance.")
+    
+    students_above_threshold = (
+        above_threshold.groupby('StudentID')
+        .agg({
+            'Subject': list,
+            'Percentage': 'count'
+        })
+        .rename(columns={'Subject': 'Subjects', 'Percentage': 'SubjectCount'})
+        .reset_index()
+    )
+    print(f"Details of students above threshold: {students_above_threshold}")
+    return students_above_threshold
+
+
 
 def calculate_average_marks_by_class(marks_df):
     return marks_df.groupby('Class')['CalculatedFinalMark'].mean()
@@ -177,11 +235,6 @@ def generate_regression_explainer(slope, intercept, r_value, p_value, std_err):
     regression_explainer += "A lower standard error indicates that the slope estimate is more precise.\n\n"
 
     return regression_explainer
-
-def identify_high_z_scores(marks_df, threshold):
-    marks_df['zScore'] = marks_df.groupby('Subject')['CalculatedFinalMark'].transform(lambda x: zscore(x, ddof=1))
-    high_z_scores_df = marks_df[marks_df['zScore'] > threshold]
-    return high_z_scores_df
 
 
 def analyze_correlation_and_prepare_scatter_plot_data(attendance_df, marks_df):
@@ -294,7 +347,7 @@ def replace_nan(obj):
         return obj.where(pd.notnull(obj), None).to_dict()
     return obj
 
-def perform_comprehensive_analysis(attendance_file, marks_file, low_attendance_threshold, high_marks_threshold):
+def perform_comprehensive_analysis(attendance_file, marks_file, low_attendance_threshold, high_attendance_threshold, low_marks_threshold, high_marks_threshold):
     def log_message(message):
         # Emit the log message to the front-end with event type "log"
         yield f"event: log\ndata: {message}\n\n"
@@ -347,18 +400,18 @@ def perform_comprehensive_analysis(attendance_file, marks_file, low_attendance_t
 
 
         log_message("Identifying low Z-scores...")
-        low_z_scores_df = identify_low_z_scores(marks_df)
+        low_z_scores_df = identify_low_z_scores(marks_df, low_marks_threshold)
         log_message(f"Number of students with low z-scores: {len(low_z_scores_df['StudentID'].unique())}")
 
         log_message("Identifying students with subjects below threshold...")
-        subjects_below_threshold = identify_students_with_subjects_below_threshold(marks_df)
+        subjects_below_threshold = identify_students_with_subjects_below_threshold(marks_df, low_marks_threshold)
         log_message(f"Number of students with subjects below threshold: {len(subjects_below_threshold)}")
 
         log_message("Calculating average marks by class...")
         average_marks_by_class = calculate_average_marks_by_class(marks_df)
         
         log_message(f"Identifying high Z-scores above threshold {high_marks_threshold}...")
-        high_z_scores_df = identify_high_z_scores(marks_df, high_marks_threshold)   
+        high_z_scores_df = identify_high_z_scores(marks_df, high_marks_threshold)
         log_message(f"Number of students with high z-scores: {len(high_z_scores_df['StudentID'].unique())}")
 
 
@@ -368,8 +421,17 @@ def perform_comprehensive_analysis(attendance_file, marks_file, low_attendance_t
         log_message("Calculating year group attendance summary...")
         year_group_attendance_summary = calculate_year_group_attendance_summary(attendance_df)
 
-        log_message(f"Identifying students below attendance threshold {low_attendance_threshold}%...")
-        students_below_attendance_threshold = identify_students_below_attendance_threshold(attendance_df, low_attendance_threshold)
+        log_message("Identifying students below low attendance threshold...")
+        students_below_threshold = identify_students_below_low_attendance_threshold(attendance_df, low_attendance_threshold)
+        print(f"Students below threshold count: {students_below_threshold.shape[0]}")
+        log_message(f"Number of students below low attendance threshold: {students_below_threshold.shape[0]}")
+
+        log_message("Identifying students above high attendance threshold...")
+        students_above_threshold = identify_students_above_high_attendance_threshold(attendance_df, high_attendance_threshold)
+        print(f"Students above threshold count: {students_above_threshold.shape[0]}")
+        log_message(f"Number of students above high attendance threshold: {students_above_threshold.shape[0]}")
+
+        log_message("Attendance analysis completed.")
 
 
         log_message("Analysis completed successfully.")
@@ -382,10 +444,16 @@ def perform_comprehensive_analysis(attendance_file, marks_file, low_attendance_t
             "high_z_scores": high_z_scores_df.to_dict(orient='records'),
             "plot_filename": correlation_analysis['plot_filename'],
             "year_group_attendance_summary": year_group_attendance_summary,
-            "students_below_attendance_threshold": students_below_attendance_threshold.to_dict(orient='records')
+            "students_below_low_threshold": students_below_threshold.to_dict(orient='records'),
+            "students_above_high_threshold": students_above_threshold.to_dict(orient='records')
         }
         results = {key: replace_nan(value) for key, value in results.items()}
         
+        print("students_below_low_threshold:")
+        print(results["students_below_low_threshold"])
+        print("\nstudents_above_high_threshold:")
+        print(results["students_above_high_threshold"])
+
         # Send the final response data as JSON with event type "result"
         yield f"event: result\ndata: {json.dumps(results)}\n\n"
 

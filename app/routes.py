@@ -1,16 +1,21 @@
+# routes.py
+
 from docx import Document
 from app.analysis import perform_comprehensive_analysis
-from .utils import allowed_file, save_temp_files
+from .utils import save_temp_files
 from flask import Blueprint, render_template, request, jsonify, flash, redirect, url_for, flash, send_file, current_app, session, stream_with_context, Response
 import os
 import pandas as pd
 from .report_generator import generate_student_report
-import pickle
 from scipy.stats import zscore
 import logging
 logging.basicConfig(level=logging.INFO)
 import re
 import tempfile
+from .analysis import perform_comprehensive_analysis, preprocess_data
+from .analysis import nan_to_none, replace_nan
+
+
 
 main = Blueprint('main', __name__)
 
@@ -49,7 +54,7 @@ def index():
 @main.route('/upload', methods=['POST'])
 def upload_files():
     """Handle file uploads and return analysis results."""
-    print("upload function called")
+    print("Upload function called")
     attendance_file = request.files.get('attendanceFile')
     marks_file = request.files.get('marksFile')
 
@@ -65,61 +70,66 @@ def upload_files():
         return jsonify({'error': error_message}), 400
 
     try:
-
+        # Extract threshold values from form data
         low_attendance_threshold = float(request.form.get('lowAttendanceThreshold', 85))
+        high_attendance_threshold = float(request.form.get('highAttendanceThreshold', 95))
+        low_marks_threshold = float(request.form.get('lowMarksThreshold', -1.5))
         high_marks_threshold = float(request.form.get('highMarksThreshold', 1.2))
+        print(f"Extracted threshold values: Low Attendance Threshold: {low_attendance_threshold}, High Attendance Threshold: {high_attendance_threshold}, Low Marks Threshold: {low_marks_threshold}, High Marks Threshold: {high_marks_threshold}")
 
-        # Temporarily save files for processing
-        print("Saving files temporarily")
-        temp_attendance_path, temp_marks_path = save_temp_files(attendance_file, marks_file)
-        # Store the temporary file paths in the session
+        session['low_attendance_threshold'] = low_attendance_threshold
+        session['high_attendance_threshold'] = high_attendance_threshold
+        session['low_marks_threshold'] = low_marks_threshold
+        session['high_marks_threshold'] = high_marks_threshold
+
+        # Save files for processing
+        import os
+        import tempfile
+        from uuid import uuid4
+
+        temp_dir = tempfile.gettempdir()
+
+        # Save the original attendance file
+        attendance_filename = f"attendance_{uuid4().hex}.xlsx"
+        temp_attendance_path = os.path.join(temp_dir, attendance_filename)
+        attendance_file.save(temp_attendance_path)
+
+        # Save a copy of the attendance file
+        attendance_file.stream.seek(0)  # Reset stream before re-saving
+        additional_attendance_filename = f"additional_attendance_{uuid4().hex}.xlsx"
+        additional_attendance_path = os.path.join(temp_dir, additional_attendance_filename)
+        attendance_file.save(additional_attendance_path)
+
+        # Save the original marks file
+        marks_filename = f"marks_{uuid4().hex}.xlsx"
+        temp_marks_path = os.path.join(temp_dir, marks_filename)
+        marks_file.save(temp_marks_path)
+
+        # Save a copy of the marks file
+        marks_file.stream.seek(0)  # Reset stream before re-saving
+        additional_marks_filename = f"additional_marks_{uuid4().hex}.xlsx"
+        additional_marks_path = os.path.join(temp_dir, additional_marks_filename)
+        marks_file.save(additional_marks_path)
+
         session['attendance_file'] = temp_attendance_path
         session['marks_file'] = temp_marks_path
+        session['additional_attendance_file'] = additional_attendance_path
+        session['additional_marks_file'] = additional_marks_path
 
-        # Read the Excel files
-        attendance_df = pd.read_excel(temp_attendance_path)
-        marks_df = pd.read_excel(temp_marks_path)
+        print(f"Saved temporary files: Attendance: {temp_attendance_path}, Marks: {temp_marks_path}, Additional Attendance: {additional_attendance_path}, Additional Marks: {additional_marks_path}")
 
-        # Check for required columns in the attendance file
-        required_attendance_columns = ['StudentID', 'Class', 'Percentage']
-        missing_attendance_columns = [col for col in required_attendance_columns if col not in attendance_df.columns]
-        if missing_attendance_columns:
-            error_message = f"The attendance file is missing the following required columns: {', '.join(missing_attendance_columns)}. " \
-                            f"Please ensure that the attendance file follows the provided template and includes all the necessary columns."
-            print(error_message)
-            return jsonify({'error': error_message}), 400
+        # Perform comprehensive analysis with the new thresholds
+        analysis_stream = perform_comprehensive_analysis(
+            temp_attendance_path, temp_marks_path,
+            low_attendance_threshold, high_attendance_threshold,
+            low_marks_threshold, high_marks_threshold
+        )
 
-        # Check for required columns in the marks file
-        required_marks_columns = ['StudentID', 'Subject', 'Class', 'T1', 'T2', 'T3', 'T1Weight', 'T2Weight', 'T3Weight', 'FinalMark']
-        missing_marks_columns = [col for col in required_marks_columns if col not in marks_df.columns]
-        if missing_marks_columns:
-            error_message = f"The marks file is missing the following required columns: {', '.join(missing_marks_columns)}. " \
-                            f"Please ensure that the marks file follows the provided template and includes all the necessary columns."
-            print(error_message)
-            return jsonify({'error': error_message}), 400
+        # Stream analysis logs and results back to the client
+        return Response(stream_with_context(analysis_stream), content_type='text/event-stream')
 
-        # Perform analysis and stream log messages
-        analysis_log_stream = stream_with_context(perform_comprehensive_analysis(temp_attendance_path, temp_marks_path, low_attendance_threshold, high_marks_threshold))
-        
-        # Create a response object with the log stream and final response data
-        response = Response(analysis_log_stream, mimetype='text/event-stream')
-        response.headers['Cache-Control'] = 'no-cache'
-        response.headers['X-Accel-Buffering'] = 'no'
-        
-        return response
-    
     except KeyError as e:
-        missing_column = str(e).strip("'[]'")
-        if missing_column in ['StudentID', 'AttendancePercentage']:
-            file_name = 'attendance'
-        elif missing_column in ['StudentID', 'TotalMarks']:
-            file_name = 'marks'
-        else:
-            file_name = 'unknown'
-
-        error_message = f"The required column '{missing_column}' is missing from the {file_name} file. " \
-                        f"Please ensure that the {file_name} file follows the provided template and includes " \
-                        f"all the necessary columns."
+        error_message = f"The required column \"{str(e).strip('[]')}\" is missing from the file."
         print(error_message)
         return jsonify({'error': error_message}), 400
 
@@ -142,115 +152,88 @@ def upload_files():
         error_message = f"An unexpected error occurred: {str(e)}. Please try again or contact support for assistance."
         print(error_message)
         return jsonify({'error': error_message}), 500
-      
-    except ValueError:
-        error_message = "Invalid threshold values. Please provide valid numerical values for attendance and marks thresholds."
-        print(error_message)
-        return jsonify({'error': error_message}), 400
 
-
-def cleanup_files(temp_attendance_path, temp_marks_path):
-    """Remove temporary files."""
-    if temp_attendance_path and os.path.exists(temp_attendance_path):
-        os.remove(temp_attendance_path)
-    if temp_marks_path and os.path.exists(temp_marks_path):
-        os.remove(temp_marks_path)
-
+def cleanup_files(temp_marks_file, temp_attendance_file):
+    if temp_marks_file and os.path.exists(temp_marks_file):
+        os.remove(temp_marks_file)
+    if temp_attendance_file and os.path.exists(temp_attendance_file):
+        os.remove(temp_attendance_file)
 
 
 @main.route('/download_report')
 def download_report():
     logging.info("Entering download_report route")
-    if 'processed_data_file' not in session:
+    if 'additional_marks_file' not in session or 'additional_attendance_file' not in session:
         flash("No data available. Please upload and analyze files first.", "warning")
-        logging.info("No processed_data_file found in session")
+        logging.info("No additional_marks_file or additional_attendance_file found in session")
         return redirect(url_for('main.index'))
 
-    processed_data_file = session.get('processed_data_file')
-    if not os.path.exists(processed_data_file):
-        flash("Processed data file does not exist. Please re-upload and analyze your files.", "error")
-        logging.error(f"File {processed_data_file} not found")
+    additional_marks_file = session.get('additional_marks_file')
+    if not os.path.exists(additional_marks_file):
+        flash("Additional marks file does not exist. Please re-upload and analyze your files.", "error")
+        logging.error(f"File {additional_marks_file} not found")
         return redirect(url_for('main.index'))
 
     try:
-        print("Attempting to load results from session['processed_data_file']")
-        results = pd.read_pickle(session['processed_data_file'])
-        low_z_scores_data = results['low_z_scores']
-        low_z_scores_df = pd.DataFrame(low_z_scores_data)
-
-        marks_file = session.get('marks_file')
-        if marks_file:
-            marks_df = pd.read_excel(marks_file)
-        else:
-            raise ValueError("Original marks file not found in the session.")
+        additional_marks_df = pd.read_excel(additional_marks_file)
 
         # Data validation checks
         required_columns = ['StudentID', 'Subject', 'T1Weight', 'T2Weight', 'T3Weight', 'FinalMark']
-        missing_columns = [col for col in required_columns if col not in marks_df.columns]
+        missing_columns = [col for col in required_columns if col not in additional_marks_df.columns]
         if missing_columns:
-            error_message = f"Missing columns in the data: {', '.join(missing_columns)}. Please check the uploaded file."
+            error_message = f"Missing columns in the additional data: {', '.join(missing_columns)}. Please check the uploaded file."
             flash(error_message, "error")
             logging.error(error_message)
             return redirect(url_for('main.index'))
 
         # Data cleaning and preprocessing
-        marks_df = marks_df.dropna(subset=['StudentID', 'Subject'])  # Drop rows with missing StudentID or Subject
-        marks_df['StudentID'] = marks_df['StudentID'].astype(int)  # Convert StudentID to integer
-        marks_df['Subject'] = marks_df['Subject'].str.strip()  # Remove leading/trailing spaces from Subject
+        additional_marks_df = additional_marks_df.dropna(subset=['StudentID', 'Subject'])
+        additional_marks_df['StudentID'] = additional_marks_df['StudentID'].astype(int)
+        additional_marks_df['Subject'] = additional_marks_df['Subject'].str.strip()
 
         # Print the number of final marks entries for each subject
-        print("\nNumber of final marks entries for each subject:")
-        subject_final_marks_counts = marks_df.groupby('Subject')['FinalMark'].count().reset_index()
+        print("\nNumber of final marks entries for each subject (additional data):")
+        subject_final_marks_counts = additional_marks_df.groupby('Subject')['FinalMark'].count().reset_index()
         for _, row in subject_final_marks_counts.iterrows():
             subject = row['Subject']
             final_marks_count = row['FinalMark']
             print(f"{subject}: {final_marks_count}")
 
-        marks_df['CalculatedFinalMark'] = marks_df[['T1Weight', 'T2Weight', 'T3Weight']].sum(axis=1, skipna=True)
-        marks_df['zScore'] = marks_df.groupby('Subject')['CalculatedFinalMark'].transform(lambda x: zscore(x[x.notna()], ddof=1))
-        marks_df['zScore'] = marks_df['zScore'].fillna(0)
-        marks_df = marks_df.round(2)
+        additional_marks_df['CalculatedFinalMark'] = additional_marks_df[['T1Weight', 'T2Weight', 'T3Weight']].sum(axis=1, skipna=True)
+        additional_marks_df['zScore'] = additional_marks_df.groupby('Subject')['CalculatedFinalMark'].transform(lambda x: zscore(x[x.notna()], ddof=1))
+        additional_marks_df['zScore'] = additional_marks_df['zScore'].fillna(0)
+        additional_marks_df = additional_marks_df.round(2)
 
-        print("Initial marks_df shape:", marks_df.shape)
-        print("Initial marks_df columns:", marks_df.columns)
+        low_marks_threshold = session.get('low_marks_threshold', -1.5)
+        students_multiple_low = additional_marks_df[additional_marks_df['zScore'] < low_marks_threshold].groupby('StudentID').filter(lambda x: len(x) > 1)['StudentID'].unique()
 
-        biology_df = marks_df[marks_df['Subject'] == 'Biology']
-        print("inital biology dataframe:", biology_df)
-
-        # Create a mapping between classes and subjects from the marks data
-        class_subject_mapping = marks_df.groupby('Class')['Subject'].unique().to_dict()
-
-        # Create a list of students with multiple subjects having z-score < -1.2
-        students_multiple_low = marks_df[marks_df['zScore'] < -1.2].groupby('StudentID').filter(lambda x: len(x) > 1)['StudentID'].unique()
-
-        print(f"Number of students with multiple subjects having z-score < -1.2: {len(students_multiple_low)}")
+        print(f"Number of students with multiple subjects having z-score < {low_marks_threshold}: {len(students_multiple_low)}")
         print("Students with multiple low z-scores:", students_multiple_low)
 
-        marks_df = marks_df[marks_df['StudentID'].isin(students_multiple_low)]
+        additional_marks_df = additional_marks_df[additional_marks_df['StudentID'].isin(students_multiple_low)]
 
         print("\nAfter filtering for students with multiple low z-scores:")
-        print(marks_df)
-        print("Marks DataFrame shape:", marks_df.shape)
-        print("Marks DataFrame columns:", marks_df.columns)
+        print(additional_marks_df)
+        print("Additional Marks DataFrame shape:", additional_marks_df.shape)
+        print("Additional Marks DataFrame columns:", additional_marks_df.columns)
 
         # Print the number of final marks entries for each subject after filtering
         print("\nNumber of final marks entries for each subject after filtering:")
-        subject_final_marks_counts = marks_df.groupby('Subject')['FinalMark'].count().reset_index()
+        subject_final_marks_counts = additional_marks_df.groupby('Subject')['FinalMark'].count().reset_index()
         for _, row in subject_final_marks_counts.iterrows():
             subject = row['Subject']
             final_marks_count = row['FinalMark']
             print(f"{subject}: {final_marks_count}")
 
-        print("\nStudents in marks_df after filtering:", marks_df['StudentID'].unique())
+        print("\nStudents in additional_marks_df after filtering:", additional_marks_df['StudentID'].unique())
 
+        print("Additional Marks DataFrame shape after filtering:", additional_marks_df.shape)
+        print("Additional Marks DataFrame columns after filtering:", additional_marks_df.columns)
+        print(f"Students in additional_marks_df: {additional_marks_df['StudentID'].unique()}")
 
-        print("Marks DataFrame shape after filtering:", marks_df.shape)
-        print("Marks DataFrame columns after filtering:", marks_df.columns)
-        print(f"Students in marks_df: {marks_df['StudentID'].unique()}")
-
-          # Print the average z-score for each subject
+        # Print the average z-score for each subject
         print("Average z-score for each subject:")
-        subject_z_scores = marks_df.groupby('Subject')['zScore'].mean().reset_index()
+        subject_z_scores = additional_marks_df.groupby('Subject')['zScore'].mean().reset_index()
         for _, row in subject_z_scores.iterrows():
             subject = row['Subject']
             avg_z_score = row['zScore']
@@ -263,25 +246,25 @@ def download_report():
             print("\nSubjects with an average z-score of 0:")
             for subject in subjects_with_zero_avg:
                 print(f"\n{subject}:")
-                subject_z_scores = marks_df[marks_df['Subject'] == subject]['zScore']
+                subject_z_scores = additional_marks_df[additional_marks_df['Subject'] == subject]['zScore']
                 print("Raw z-scores (sorted from lowest to highest):")
                 print(sorted(subject_z_scores.dropna().tolist()))
-
 
         print("Generating report...")
 
         # Load attendance data (if available)
-        attendance_file = session.get('attendance_file')
-        if attendance_file:
-            attendance_df = pd.read_excel(attendance_file)
-            attendance_df = attendance_df.dropna(subset=['StudentID', 'Class'])  # Drop rows with missing StudentID or Class
-            attendance_df['StudentID'] = attendance_df['StudentID'].astype(int)  # Convert StudentID to integer
-            attendance_df['Class'] = attendance_df['Class'].str.strip()  # Remove leading/trailing spaces from Class
+        additional_attendance_file = session.get('additional_attendance_file')
+        if additional_attendance_file:
+            attendance_df = pd.read_excel(additional_attendance_file)
+            attendance_df = attendance_df.dropna(subset=['StudentID', 'Class'])
+            attendance_df['StudentID'] = attendance_df['StudentID'].astype(int)
+            attendance_df['Class'] = attendance_df['Class'].str.strip()
 
             # Remove the trailing 'a' from the class names in the attendance data
             attendance_df['Class'] = attendance_df['Class'].apply(lambda x: re.sub(r'a$', '', x))
 
             # Map the classes in the attendance data to their respective subjects
+            class_subject_mapping = additional_marks_df.groupby('Class')['Subject'].unique().to_dict()
             attendance_df['Subject'] = attendance_df['Class'].map(class_subject_mapping)
 
             # Drop rows where the subject is not found in the mapping
@@ -297,7 +280,7 @@ def download_report():
             attendance_df = None
             overall_attendance = None
 
-        combined_report = generate_student_report(marks_df, students_multiple_low, attendance_df, overall_attendance)
+        combined_report = generate_student_report(additional_marks_df, students_multiple_low, attendance_df, overall_attendance)
 
         # Validate the generated Word document
         try:
@@ -320,5 +303,69 @@ def download_report():
         print(f"Report generation failed: {e}")
         return redirect(url_for('main.index'))
 
-from .analysis import identify_students_below_attendance_threshold
 
+from .analysis import preprocess_data, get_student_marks, get_student_attendance
+
+@main.route('/get_students', methods=['GET'])
+def get_students():
+    try:
+        attendance_file = session.get('attendance_file')
+        if not attendance_file:
+            return jsonify({'error': 'No data available'}), 400
+        
+        attendance_df = pd.read_pickle(attendance_file)
+        
+        if 'StudentName' in attendance_df.columns:
+            students = attendance_df[['StudentID', 'StudentName']].drop_duplicates().to_dict(orient='records')
+        else:
+            students = attendance_df[['StudentID']].drop_duplicates().to_dict(orient='records')
+            for student in students:
+                student['StudentName'] = ''
+        
+        return jsonify(students)
+    except Exception as e:
+        print(f"Error fetching students: {e}")
+        return jsonify({'error': str(e)}), 500
+    
+
+@main.route('/search_students', methods=['GET'])
+def search_students():
+    try:
+        query = request.args.get('query', '').strip().lower()
+        
+        # Read the DataFrames from the temporary files
+        marks_file = session.get('marks_file')
+        attendance_file = session.get('attendance_file')
+
+        if not marks_file or not attendance_file:
+            return jsonify({'error': 'No data available'}), 400
+
+        marks_df = pd.read_pickle(marks_file)
+        attendance_df = pd.read_pickle(attendance_file)
+
+        # Filter students based on the search query
+        students = attendance_df[
+            (attendance_df['StudentID'].astype(str).str.contains(query))
+        ]
+
+        # Prepare the student data
+        student_data = []
+        for _, row in students.iterrows():
+            student_id = row['StudentID']
+            student_name = row.get('StudentName', '')  # Use an empty string if 'StudentName' is not available
+            marks = get_student_marks(student_id, marks_df)
+            attendance = get_student_attendance(student_id, attendance_df)
+
+            student_data.append({
+                'StudentID': student_id,
+                'StudentName': student_name,
+                'Marks': marks,
+                'Attendance': attendance
+            })
+
+        # Convert NaN values to None using the replace_nan function
+        student_data = replace_nan(student_data)
+
+        return jsonify({'students': student_data})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500

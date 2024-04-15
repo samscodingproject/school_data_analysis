@@ -66,6 +66,14 @@
                 <input type="number" id="lowAttendanceThreshold" name="lowAttendanceThreshold" min="0" max="100" value="85" required>
             </div>
             <div class="form-field">
+                <label for="highAttendanceThreshold">High Attendance Threshold (%):</label>
+                <input type="number" id="highAttendanceThreshold" name="highAttendanceThreshold" min="0" max="100" value="95" required>
+            </div>
+            <div class="form-field">
+                <label for="lowMarksThreshold">Low Marks Threshold (Z-score):</label>
+                <input type="number" id="lowMarksThreshold" name="lowMarksThreshold" step="0.1" value="-1.5" required>
+            </div>
+            <div class="form-field">
                 <label for="highMarksThreshold">High Marks Threshold (Z-score):</label>
                 <input type="number" id="highMarksThreshold" name="highMarksThreshold" step="0.1" value="1.2" required>
             </div>
@@ -77,17 +85,32 @@
         <section id="analysisResults" class="analysis-results">
             <!-- Correlation and Scatter Plot Section -->
             <div id="correlationAndScatterPlotSection"></div>
+            
             <!-- Low Z-Scores Section -->
             <div id="lowZScoresSection"></div>
+            
             <!-- High Z-Scores Section -->
             <div id="highZScoresSection"></div>
+            
             <!-- Average Marks by Class Section -->
             <div id="averageMarksByClassSection"></div>
+            
             <!-- Students Below Threshold in Multiple Subjects Section -->
             <div id="studentsBelowThresholdSection"></div>
+            
+            <!-- Students Below Attendance Threshold Section -->
+            <div id="studentsBelowAttendanceThresholdSection"></div>
+            
+            <!-- Students Above Attendance Threshold Section -->
+            <div id="studentsAboveAttendanceThresholdSection"></div>
+            
             <!-- Year Group Attendance Summary Section -->
             <div id="yearGroupAttendanceSummarySection"></div>
+            
+            <!-- Individual Student Report Section -->
+            <div id="individualStudentReportSection"></div>
         </section>
+        
         <!-- Container for displaying selected classes' average marks -->
         <div id="selectedClassesContainer" class="selected-classes"></div>
         <button id="downloadReportBtn" class="button button-primary" style="display: none;">Download Report</button>
